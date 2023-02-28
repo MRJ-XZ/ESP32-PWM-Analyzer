@@ -1,0 +1,26 @@
+{
+  "name": "ESP32-PWM-Analyzer",
+  "version": "1.0.0",
+  "description": "ESP32-PWM-Analyzer  is a program that analyzes an input pwm signal using MCPWM module . ",
+  "keywords": "ESP32 , MCPWM Capture , PWM , Duty cycle , frequency",
+  "repository":
+  {
+    "type": "git",
+    "url": "https://github.com/MRJ-XZ/ESP32_PWM_Analyzer.git"
+  },
+  "authors":
+  [
+    {
+      "name": "Mohammad Reza Jafari",
+      "email": "mohammad.mrjr@gmail.com",
+      "maintainer": true
+    }
+  ],
+  "export": {
+  	"exclude":["test/*"]
+  },
+  "license": "MIT",
+  "dependencies": {},
+  "frameworks": ["Arduino"],
+  "platforms": ["espressif32"]
+}
