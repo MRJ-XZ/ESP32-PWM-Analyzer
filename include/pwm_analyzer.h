@@ -1,50 +1,37 @@
-/*MIT License
-
-Copyright (c) 2022 Mohammad Reza Jafari
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.*/
 #ifndef PWM_ANALYZER_H
 #define PWM_ANALYZER_H
 
 #include "Arduino.h"
 #include "driver/mcpwm.h"
-#include "soc/mcpwm_reg.h"
+#define CAP_MASK 0x1
 
-#define MCPWM_INT_ENA(i) (volatile uint32_t *)MCMCPWM_INT_ENA_MCPWM_REG(i)
-#define MCPWM_INT_CLR(i) (volatile uint32_t *)MCMCPWM_INT_CLR_MCPWM_REG(i)
-
+static bool capture_isr(mcpwm_unit_t,mcpwm_capture_channel_id_t,const cap_event_data_t*,void*);
 class PWM_Analyzer{
     private:
-        static int capture_number; // number of mcpwm captures being used
-        int pwm_number;
-        int MCPWM_unit;
-        int input_pwm_pin;
+        mcpwm_capture_config_t capture;
+        uint8_t MCPWM_unit = -1;
+        uint8_t capture_channel = -1;
+        uint8_t input_pwm_pin;
         int frequency;
-        int duty_cycle;
+        double duty_cycle;
+        long neg_edge = 0,
+            pos_edge = 0,
+            value = 0;
+        int high = 0,
+            low = 0;
+        static uint8_t captures;
+        void set_captures(uint8_t);
+        void reset_captures(uint8_t);
     public:
+        friend bool IRAM_ATTR capture_isr(mcpwm_unit_t,mcpwm_capture_channel_id_t,const cap_event_data_t*,void*);    
         PWM_Analyzer(int input_pwm_pin);
-        PWM_Analyzer(int MCPWM_unit, int input_pwm_pin);
+        PWM_Analyzer(int input_pwm_pin ,int MCPWM_unit);
+        PWM_Analyzer(int input_pwm_pin ,int MCPWM_unit ,int capture_channel);
         uint32_t Get_PWM_frequency();
         double Get_PWM_duty_cycle();
         void Restart();
         void Stop();
-        ~PWM_Analyzer(){};
+        ~PWM_Analyzer();
 };
 
 #endif

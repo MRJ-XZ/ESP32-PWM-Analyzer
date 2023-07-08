@@ -1,175 +1,262 @@
 #include "pwm_analyzer.h"
 
-int PWM_Analyzer::capture_number = 0;
-int32_t pos_edge0 = 0,
-    neg_edge0 = 0, 
-    pos_edge1 = 0,
-    neg_edge1 = 0,
-    pos_edge2 = 0,
-    neg_edge2 = 0,
-    value0 = 0,
-    value1 = 0,
-    value2 = 0,
-    low0 = 0,
-    high0 = 0,
-    low1 = 0,
-    high1 = 0,
-    low2 = 0,
-    high2 = 0;
-static void IRAM_ATTR capture_isr0(void*){
-    pos_edge0 =  mcpwm_capture_signal_get_value(MCPWM_UNIT_0, MCPWM_SELECT_CAP0);
-    neg_edge0 = mcpwm_capture_signal_get_value(MCPWM_UNIT_0, MCPWM_SELECT_CAP1);
-    value0 = pos_edge0 - neg_edge0;
-    (value0 > 0) ? low0 = value0 : high0 = value0;
+uint8_t PWM_Analyzer::captures = 0b000000;
+
+static bool IRAM_ATTR capture_isr(mcpwm_unit_t, mcpwm_capture_channel_id_t, const cap_event_data_t *data, void* user){
+    PWM_Analyzer* pwm = (PWM_Analyzer*)user;
+    if (data->cap_edge == MCPWM_POS_EDGE)
+        pwm->pos_edge = data->cap_value;
+    else
+        pwm->neg_edge = data->cap_value;
+    pwm->value = pwm->pos_edge - pwm->neg_edge;
+    (pwm->value > 0) ? pwm->low = pwm->value : pwm->high = pwm->value;
+    return pdTRUE;
 }
-static void IRAM_ATTR capture_isr1(void*){
-    pos_edge1 =  mcpwm_capture_signal_get_value(MCPWM_UNIT_1, MCPWM_SELECT_CAP0);
-    neg_edge1 = mcpwm_capture_signal_get_value(MCPWM_UNIT_1, MCPWM_SELECT_CAP1);
-    value1 = pos_edge1 - neg_edge1;
-    (value1 > 0) ? low1 = value1 : high1 = value1;
+void PWM_Analyzer::set_captures(uint8_t input){
+    captures |= CAP_MASK << input;
 }
-static void IRAM_ATTR capture_isr2(void*){
-    pos_edge2 =  mcpwm_capture_signal_get_value(MCPWM_UNIT_0, MCPWM_SELECT_CAP2);
-    neg_edge2 = mcpwm_capture_signal_get_value(MCPWM_UNIT_1, MCPWM_SELECT_CAP2);
-    value2 = pos_edge2 - neg_edge2;
-    (value2 > 0) ? low2 = value2 : high2 = value2;
+void PWM_Analyzer::reset_captures(uint8_t input){
+    uint8_t temp = ~captures | (CAP_MASK << input);
+    captures = ~temp;
 }
 PWM_Analyzer::PWM_Analyzer(int _input_pwm_pin) : input_pwm_pin(_input_pwm_pin){
-    switch(capture_number){
-        case 0:
-            mcpwm_gpio_init(MCPWM_UNIT_0 , MCPWM_CAP_0 , input_pwm_pin);
-            mcpwm_gpio_init(MCPWM_UNIT_0 , MCPWM_CAP_1 , input_pwm_pin);
-            mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP0, MCPWM_POS_EDGE, 0);
-            mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP1, MCPWM_NEG_EDGE, 0);
-            mcpwm_isr_register(MCPWM_UNIT_0, capture_isr0 , nullptr, ESP_INTR_FLAG_IRAM, nullptr);
-            *MCPWM_INT_ENA(0) = MCPWM_CAP0_INT_ENA | MCPWM_CAP1_INT_ENA;
-            capture_number = 1;
-            pwm_number = 0;
-            break;
-        case 1:
-            mcpwm_gpio_init(MCPWM_UNIT_1 , MCPWM_CAP_0 , input_pwm_pin);
-            mcpwm_gpio_init(MCPWM_UNIT_1 , MCPWM_CAP_1 , input_pwm_pin);
-            mcpwm_capture_enable(MCPWM_UNIT_1, MCPWM_SELECT_CAP0, MCPWM_POS_EDGE, 0);
-            mcpwm_capture_enable(MCPWM_UNIT_1, MCPWM_SELECT_CAP1, MCPWM_NEG_EDGE, 0);
-            mcpwm_isr_register(MCPWM_UNIT_1, capture_isr1 , nullptr, ESP_INTR_FLAG_IRAM, nullptr);
-            *MCPWM_INT_ENA(1) = MCPWM_CAP0_INT_ENA | MCPWM_CAP1_INT_ENA;
-            capture_number = 2;
-            pwm_number = 1;
-            break;
-        case 2:
-            mcpwm_gpio_init(MCPWM_UNIT_0 , MCPWM_CAP_0 , input_pwm_pin);
-            mcpwm_gpio_init(MCPWM_UNIT_0 , MCPWM_CAP_1 , input_pwm_pin);
-            mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP0, MCPWM_POS_EDGE, 0);
-            mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP1, MCPWM_NEG_EDGE, 0);
-            mcpwm_isr_register(MCPWM_UNIT_0, capture_isr0 , nullptr, ESP_INTR_FLAG_IRAM, nullptr);
-            *MCPWM_INT_ENA(0) = MCPWM_CAP0_INT_ENA | MCPWM_CAP1_INT_ENA;
-            capture_number = 3;
-            pwm_number = 0;
-            break;
-        case 3:
-            mcpwm_gpio_init(MCPWM_UNIT_0 , MCPWM_CAP_2 , input_pwm_pin);
-            mcpwm_gpio_init(MCPWM_UNIT_1 , MCPWM_CAP_2 , input_pwm_pin);
-            mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP2, MCPWM_POS_EDGE, 0);
-            mcpwm_capture_enable(MCPWM_UNIT_1, MCPWM_SELECT_CAP2, MCPWM_NEG_EDGE, 0);
-            mcpwm_isr_register(MCPWM_UNIT_0, capture_isr2 , nullptr, ESP_INTR_FLAG_IRAM, nullptr);
-            *MCPWM_INT_ENA(0) = MCPWM_CAP2_INT_ENA; 
-            capture_number = 4;
-            pwm_number = 2;          
-        default:
-            Serial.println("All possible pwm analyzers are occupied .");
-            break;
-    }
+        for(int i=0;i<6;i++){
+            if(captures >> i & CAP_MASK)
+                continue;
+            else{
+                capture.cap_prescale = 1;
+                capture.cap_edge = MCPWM_BOTH_EDGE;
+                capture.capture_cb = capture_isr;
+                capture.user_data = (void*)this;
+                switch(i){
+                    case 0:
+                        mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM_CAP_0, input_pwm_pin); 
+                        mcpwm_capture_enable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP0, &capture);
+                        this->MCPWM_unit = 0;
+                        this->capture_channel = 0;
+                        set_captures(0);
+                        return;
+                    case 1:
+                        mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM_CAP_1, input_pwm_pin); 
+                        mcpwm_capture_enable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP1, &capture);
+                        this->MCPWM_unit = 0;
+                        this->capture_channel = 1;
+                        set_captures(1);
+                        return;
+                    case 2:
+                        mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM_CAP_2, input_pwm_pin); 
+                        mcpwm_capture_enable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP2, &capture);
+                        this->MCPWM_unit = 0;
+                        this->capture_channel = 2;
+                        set_captures(2);
+                        return;
+                    case 3:
+                        mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM_CAP_0, input_pwm_pin);  
+                        mcpwm_capture_enable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP0, &capture);
+                        this->MCPWM_unit = 1;
+                        this->capture_channel = 0;
+                        set_captures(3);
+                        return;
+                    case 4:
+                        mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM_CAP_1, input_pwm_pin); 
+                        mcpwm_capture_enable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP1, &capture);
+                        this->MCPWM_unit = 1;
+                        this->capture_channel = 1;
+                        set_captures(4);
+                        return;  
+                    case 5:
+                        mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM_CAP_2, input_pwm_pin); 
+                        mcpwm_capture_enable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP2, &capture);
+                        this->MCPWM_unit = 1;
+                        this->capture_channel = 2;
+                        set_captures(5);
+                        return;                      
+                }
+            }
+        }       
+        log_e("All possible pwm analyzers are occupied .");
 }
-PWM_Analyzer::PWM_Analyzer(int _MCPWM_unit , int _input_pwm_pin): MCPWM_unit(_MCPWM_unit) , input_pwm_pin(_input_pwm_pin)
+PWM_Analyzer::PWM_Analyzer(int _input_pwm_pin ,int _MCPWM_unit): MCPWM_unit(_MCPWM_unit) , input_pwm_pin(_input_pwm_pin)
 {
     if (MCPWM_unit < 2 && MCPWM_unit > -1){
         if(!MCPWM_unit){
-            mcpwm_gpio_init(MCPWM_UNIT_0 , MCPWM_CAP_0 , input_pwm_pin);
-            mcpwm_gpio_init(MCPWM_UNIT_0 , MCPWM_CAP_1 , input_pwm_pin);
-            mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP0, MCPWM_POS_EDGE, 0);
-            mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP1, MCPWM_NEG_EDGE, 0);
-            mcpwm_isr_register(MCPWM_UNIT_0, capture_isr0 , nullptr, ESP_INTR_FLAG_IRAM, nullptr);
-            *MCPWM_INT_ENA(0) = MCPWM_CAP0_INT_ENA | MCPWM_CAP1_INT_ENA;
-            capture_number |= 1;
-            pwm_number = 0;
+            for(int i=0;i<3;i++){
+                if(captures >> i & CAP_MASK)
+                    continue;
+                else{
+                    capture.cap_prescale = 1;
+                    capture.cap_edge = MCPWM_BOTH_EDGE;
+                    capture.capture_cb = capture_isr;   
+                    capture.user_data = (void*)this;
+                    switch(i){
+                        case 0:
+                            mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM_CAP_0, input_pwm_pin); 
+                            mcpwm_capture_enable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP0, &capture);
+                            this->MCPWM_unit = 0;
+                            this->capture_channel = 0;
+                            set_captures(0);
+                            return;
+                        case 1:
+                            mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM_CAP_1, input_pwm_pin); 
+                            mcpwm_capture_enable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP1, &capture);
+                            this->MCPWM_unit = 0;
+                            this->capture_channel = 1;
+                            set_captures(1);
+                            return;
+                        case 2:
+                            mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM_CAP_2, input_pwm_pin); 
+                            mcpwm_capture_enable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP2, &capture);
+                            this->MCPWM_unit = 0;
+                            this->capture_channel = 2;
+                            set_captures(2);
+                            return;
+                    }                 
+                }
+            }
+            log_e("No free pwm analyzer in MCPWM_UNIT_0 is available.");
         }
         else{
-            mcpwm_gpio_init(MCPWM_UNIT_1 , MCPWM_CAP_0 , input_pwm_pin);
-            mcpwm_gpio_init(MCPWM_UNIT_1 , MCPWM_CAP_1 , input_pwm_pin);
-            mcpwm_capture_enable(MCPWM_UNIT_1, MCPWM_SELECT_CAP0, MCPWM_POS_EDGE, 0);
-            mcpwm_capture_enable(MCPWM_UNIT_1, MCPWM_SELECT_CAP1, MCPWM_NEG_EDGE, 0);
-            mcpwm_isr_register(MCPWM_UNIT_1, capture_isr1 , nullptr, ESP_INTR_FLAG_IRAM, nullptr);
-            *MCPWM_INT_ENA(1) = MCPWM_CAP0_INT_ENA | MCPWM_CAP1_INT_ENA;            
-            capture_number |= 2;
-            pwm_number = 1;
+            for(int i=0;i<3;i++){
+                if(captures >> i+3 & CAP_MASK)
+                    continue;
+                else{
+                    capture.cap_prescale = 1;
+                    capture.cap_edge = MCPWM_BOTH_EDGE;
+                    capture.capture_cb = capture_isr;  
+                    capture.user_data = (void*)this; 
+                    switch(i){
+                        case 0:
+                            mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM_CAP_0, input_pwm_pin); 
+                            mcpwm_capture_enable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP0, &capture);
+                            this->MCPWM_unit = 1;
+                            this->capture_channel = 0;
+                            set_captures(3);
+                            return;
+                        case 1:
+                            mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM_CAP_1, input_pwm_pin); 
+                            mcpwm_capture_enable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP1, &capture);
+                            this->MCPWM_unit = 1;
+                            this->capture_channel = 1;
+                            set_captures(4);
+                            return;
+                        case 2:
+                            mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM_CAP_2, input_pwm_pin); 
+                            mcpwm_capture_enable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP2, &capture);
+                            this->MCPWM_unit = 1;
+                            this->capture_channel = 2;
+                            set_captures(5);
+                            return;
+                    }                 
+                }
+            }
+            log_e("No free pwm analyzer in MCPWM_UNIT_1 is available.");
         }
     }
     else
-        Serial.println("Warning : invalid MCPWM unit choice."); 
+        log_e("Invalid MCPWM unit choice. Initialization ABORTED."); 
+}
+PWM_Analyzer::PWM_Analyzer(int _input_pwm_pin ,int _MCPWM_unit ,int _capture_channel)
+    : MCPWM_unit(_MCPWM_unit) , input_pwm_pin(_input_pwm_pin) , capture_channel(_capture_channel)
+{
+    if((MCPWM_unit < 2 && MCPWM_unit > -1) && (capture_channel < 3 && capture_channel > -1)){
+        if(captures >> (MCPWM_unit * 3 + capture_channel) & CAP_MASK)
+            log_e("Selected MCPWM_UNIT and MCPWM_CAP have previous config. setting new config.");
+        capture.cap_prescale = 1;
+        capture.cap_edge = MCPWM_BOTH_EDGE;
+        capture.capture_cb = capture_isr; 
+        capture.user_data = (void*)this;
+
+    }
 }
 uint32_t PWM_Analyzer::Get_PWM_frequency(){
-    switch(pwm_number){
-        case 0:
-            frequency = 80000000UL / (low0 - high0);
-            return frequency;
-        case 1:
-            frequency = 80000000UL / (low1 - high1);
-            return frequency;
-        case 2:
-            frequency = 80000000UL / (low2 - high2);
-            return frequency;
+    if(high == low == 0){
+        log_e("No pwm signal detected.");
+        return -1;
     }
-    return 0;
+    else{
+        frequency = 80000000UL / (low - high);
+        return frequency;
+    }
 }
-double PWM_Analyzer::Get_PWM_duty_cycle(){
-    switch(pwm_number){
-        case 0:
-            duty_cycle = -high0 * 100 / (low0 - high0);
-            return duty_cycle;
-        case 1:
-            duty_cycle = -high1 * 100 / (low1 - high1);
-            return duty_cycle;
-        case 2:
-            duty_cycle = -high2 * 100 / (low2 - high2);
-            return duty_cycle;
-    }    
-    return 0;
+double PWM_Analyzer::Get_PWM_duty_cycle(){ 
+    if(high == low == 0){
+        log_e("No pwm signal detected.");
+        return -1;
+    }
+    else{
+        duty_cycle = -high * 100.0 / (low - high);
+        return duty_cycle;
+    }
 }
 void PWM_Analyzer::Restart(){
-    switch(pwm_number){
+    switch(MCPWM_unit * 3 + capture_channel){
         case 0:
-            mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP0, MCPWM_POS_EDGE, 0);
-            mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP1, MCPWM_NEG_EDGE, 0);
-            *MCPWM_INT_ENA(0) = MCPWM_CAP0_INT_ENA | MCPWM_CAP1_INT_ENA;
-            break;
+            mcpwm_capture_enable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP0, &capture);
+            return;
         case 1:
-            mcpwm_capture_enable(MCPWM_UNIT_1, MCPWM_SELECT_CAP0, MCPWM_POS_EDGE, 0);
-            mcpwm_capture_enable(MCPWM_UNIT_1, MCPWM_SELECT_CAP1, MCPWM_NEG_EDGE, 0);
-            *MCPWM_INT_ENA(1) = MCPWM_CAP0_INT_ENA | MCPWM_CAP1_INT_ENA;
-            break;
+            mcpwm_capture_enable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP1, &capture);
+            return;
         case 2:
-            mcpwm_capture_enable(MCPWM_UNIT_0, MCPWM_SELECT_CAP2, MCPWM_POS_EDGE, 0);
-            mcpwm_capture_enable(MCPWM_UNIT_1, MCPWM_SELECT_CAP2, MCPWM_NEG_EDGE, 0);
-            *MCPWM_INT_ENA(0) = MCPWM_CAP2_INT_ENA;
-            break; 
-    }       
+            mcpwm_capture_enable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP2, &capture);
+            return;
+        case 3:
+            mcpwm_capture_enable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP0, &capture);
+            return;
+        case 4:
+            mcpwm_capture_enable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP1, &capture);
+            return;
+        case 5:
+            mcpwm_capture_enable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP2, &capture);
+            return;
+    }      
 }
 void PWM_Analyzer::Stop(){
-    switch(pwm_number){
+    switch(MCPWM_unit * 3 + capture_channel){
         case 0:
-            mcpwm_capture_disable(MCPWM_UNIT_0, MCPWM_SELECT_CAP0);
-            mcpwm_capture_disable(MCPWM_UNIT_0, MCPWM_SELECT_CAP1);
-            *MCPWM_INT_ENA(0) = 0;
-            break;
+            mcpwm_capture_disable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP0);
+            return;
         case 1:
-            mcpwm_capture_disable(MCPWM_UNIT_1, MCPWM_SELECT_CAP0);
-            mcpwm_capture_disable(MCPWM_UNIT_1, MCPWM_SELECT_CAP1);
-            *MCPWM_INT_ENA(1) = 0;
-            break;
+            mcpwm_capture_disable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP1);
+            return;
         case 2:
-            mcpwm_capture_disable(MCPWM_UNIT_0, MCPWM_SELECT_CAP2);
-            mcpwm_capture_disable(MCPWM_UNIT_1, MCPWM_SELECT_CAP2);
-            *MCPWM_INT_ENA(0) = 0;
-            break; 
-    }   
+            mcpwm_capture_disable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP2);
+            return;
+        case 3:
+            mcpwm_capture_disable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP0);
+            return;
+        case 4:
+            mcpwm_capture_disable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP1);
+            return;
+        case 5:
+            mcpwm_capture_disable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP2);
+            return;
+    }
+}
+PWM_Analyzer::~PWM_Analyzer(){
+    switch(MCPWM_unit * 3 + capture_channel){
+        case 0:
+            mcpwm_capture_disable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP0);
+            reset_captures(0);
+            return;
+        case 1:
+            mcpwm_capture_disable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP1);
+            reset_captures(1);
+            return;
+        case 2:
+            mcpwm_capture_disable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP2);
+            reset_captures(2);
+            return;
+        case 3:
+            mcpwm_capture_disable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP0);
+            reset_captures(3);
+            return;
+        case 4:
+            mcpwm_capture_disable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP1);
+            reset_captures(4);
+            return;
+        case 5:
+            mcpwm_capture_disable_channel(MCPWM_UNIT_1, MCPWM_SELECT_CAP2);
+            reset_captures(5);
+            return;
+    }
 }
