@@ -32,14 +32,19 @@ void setup(){
     //  Reading the duty cycle of signal on gpio34.
     Serial.println(second_pwm.Get_PWM_duty_cycle());
     
-    //  Stoping analying temporarily.
+    //  Stop analyzing temporarily.
     second_pwm.Stop();
 }
 int counter = 0;
+bool flag = true;
 void loop(){
-    if(third->Get_PWM_duty_cycle() > 70.0)
-        /*  deleting object that you no longer need it. */
-        third->~PWM_Analyzer();
+    if(flag){
+        if(third->Get_PWM_duty_cycle() > 70.0){
+            /*  deleting object that you no longer need it. */
+            third->~PWM_Analyzer();
+            flag = false;
+        }
+    }
     if(counter > 10000)
         /*  Starting to analyze again. */
         second_pwm.Restart();
